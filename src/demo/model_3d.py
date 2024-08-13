@@ -1,6 +1,6 @@
 from src.models.dragondiff import DragonPipeline
 from src.models.dragondiff_3d import DragonPipeline_3d
-from src.utils.utils import resize_batch_numpy_images,resize_numpy_image, split_ldm, process_move_batch, process_move, process_drag_face, process_drag, process_appearance, process_paste
+from src.utils.utils import resize_batch_numpy_images,resize_numpy_image, split_ldm, process_replace_batch,process_move_batch, process_move, process_drag_face, process_drag, process_appearance, process_paste
 
 import torch
 import cv2
@@ -21,6 +21,27 @@ SIZES = {
     3:1,
 }
 
+def tensor_to_mask_image(tensor):
+    """
+    将形状为1x1x64x64的tensor转换为黑白mask图像。
+
+    参数:
+    tensor (torch.Tensor): 由0和1组成的矩阵，大小为(1, 1, 64, 64)。
+
+    返回:
+    PIL.Image: 黑白mask图像。
+    """
+    # 去除多余的维度
+    tensor_2d = tensor.squeeze().byte() * 255  # 变成64x64，并将1转为255, 0保持为0
+    
+    # 转换为numpy数组
+    np_image = tensor_2d.numpy()
+    
+    # 创建PIL图像
+    mask_image = Image.fromarray(np_image, mode='L')  # 'L'模式表示灰度图像
+    
+    return mask_image
+
 class DragonModels_3d():
     def __init__(self, pretrained_model_path):
         self.ip_scale = 0.1
@@ -33,7 +54,7 @@ class DragonModels_3d():
         SHAPE_PREDICTOR_PATH = 'models/shape_predictor_68_face_landmarks.dat'
         self.face_predictor = dlib.shape_predictor(SHAPE_PREDICTOR_PATH)
     
-    def run_move_batch(self, original_image, mask, image_replace , mask_ref, prompt, resize_scale, w_edit, w_content, w_contrast, w_inpaint, seed, selected_points, guidance_scale, energy_scale, max_resolution, SDE_strength, ip_scale=None):
+    def run_move_batch_replace(self, original_image, mask, image_replace , mask_ref, prompt, resize_scale, w_edit, w_content, w_contrast, w_inpaint, seed, selected_points, guidance_scale, energy_scale, max_resolution, SDE_strength, ip_scale=None):
         #ref 和 mask ref 应该都是不需要的
         # 只有一张original_image
         # 关键就是搞清mask 和
@@ -83,10 +104,10 @@ class DragonModels_3d():
         # img_replace_tensor = (PILToTensor()(img_replace) / 255.0 - 0.5) * 2
         # img_replace_tensor = img_replace_tensor.to(self.device, dtype=self.precision).unsqueeze(0)
 
-        if mask_ref is not None and np.sum(mask_ref)!=0:
-            mask_ref = np.repeat(mask_ref[:,:,None], 3, 2)
-        else:
-            mask_ref = None
+        # if mask_ref is not None and np.sum(mask_ref)!=0:
+        #     mask_ref = np.repeat(mask_ref[:,:,None], 3, 2)
+        # else:
+        #     mask_ref = None
 
         
         emb_im, emb_im_uncond = self.editor.get_image_embeds(processed_images_prompt)
@@ -108,6 +129,7 @@ class DragonModels_3d():
             
         # ddim_latents  = torch.load("ddim_latents.pth")
         latent_in = ddim_latents[-1][:1].squeeze(2)
+        latent_in_replace = ddim_latents[-1][1:].squeeze(2)
         # torch.save(ddim_latents,"ddim_latents.pth")
         
         scale = 8*SIZES[max(self.up_ft_index)]/self.up_scale #? 这块的话应该只适应于不移动的情况
@@ -125,7 +147,7 @@ class DragonModels_3d():
         dx = x_cur[0]-x[0]
         dy = y_cur[0]-y[0]
         
-        edit_kwargs = process_move_batch( # 这块后面可以再检查下
+        edit_kwargs = process_replace_batch( # 这块后面可以再检查下
             path_mask_batch=mask, #就是物体单独的mask
             h=h, #960   
             w=w, #640
@@ -144,21 +166,34 @@ class DragonModels_3d():
             path_mask_ref_batch=mask_ref
         )
         
+        # print("edit test")
+        # from IPython import embed;embed()
+        
         # resize_scale=1
         #
         device = latent_in.device
         dtype = latent_in.dtype
         latent_tensors = []
         batch_size, c, n, h, w = latent_in.shape
+        
+        resize_scale=1
 
         for i in range(n):
             mask_tmp = (F.interpolate(img2tensor(mask[i])[0].unsqueeze(0).unsqueeze(0), 
                                     (int(h * resize_scale), int(w * resize_scale))) > 0).float().to(device, dtype=dtype)
             
+            mask_ref_tmp = (F.interpolate(img2tensor(mask_ref[i])[0].unsqueeze(0).unsqueeze(0), 
+                                    (int(h * resize_scale), int(w * resize_scale))) > 0).float().to(device, dtype=dtype)
+            
+            # from IPython import embed; embed()
+            
             latent_tmp = F.interpolate(latent_in[:, :, i, :, :], 
                                     (int(h * resize_scale), int(w * resize_scale)))
             
             mask_tmp = torch.roll(mask_tmp, (int(dy / (w / h) * resize_scale), 
+                                            int(dx / (w / h) * resize_scale)), (-2, -1))
+            
+            mask_ref_tmp = torch.roll(mask_ref_tmp, (int(dy / (w / h) * resize_scale), 
                                             int(dx / (w / h) * resize_scale)), (-2, -1))
             
             latent_tmp = torch.roll(latent_tmp, (int(dy / (w / h) * resize_scale), 
@@ -168,28 +203,31 @@ class DragonModels_3d():
             pad_size_y = abs(mask_tmp.shape[-2] - h) // 2
             # print("in_loop")
             # from IPython import embed;embed()
-            if resize_scale > 1:
-                sum_before = torch.sum(mask_tmp)
-                mask_tmp = mask_tmp[:, :, pad_size_y:pad_size_y + h, pad_size_x:pad_size_x + w]
-                latent_tmp = latent_tmp[:, :, pad_size_y:pad_size_y + h, pad_size_x:pad_size_x + w]
-                sum_after = torch.sum(mask_tmp)
-                if sum_after != sum_before:
-                    raise ValueError('Resize out of bounds.')
+            # if resize_scale > 1:
+            #     sum_before = torch.sum(mask_tmp)
+            #     mask_tmp = mask_tmp[:, :, pad_size_y:pad_size_y + h, pad_size_x:pad_size_x + w]
+            #     latent_tmp = latent_tmp[:, :, pad_size_y:pad_size_y + h, pad_size_x:pad_size_x + w]
+            #     sum_after = torch.sum(mask_tmp)
+            #     if sum_after != sum_before:
+            #         raise ValueError('Resize out of bounds.')
             
-            elif resize_scale < 1:
-                temp_mask = torch.zeros(1, 1, h, w).to(device, dtype=dtype)
-                temp_mask[:, :, pad_size_y:pad_size_y + mask_tmp.shape[-2], pad_size_x:pad_size_x + mask_tmp.shape[-1]] = mask_tmp
-                mask_tmp = (temp_mask > 0.5).float()
+            # elif resize_scale < 1:
+            #     temp_mask = torch.zeros(1, 1, h, w).to(device, dtype=dtype)
+            #     temp_mask[:, :, pad_size_y:pad_size_y + mask_tmp.shape[-2], pad_size_x:pad_size_x + mask_tmp.shape[-1]] = mask_tmp
+            #     mask_tmp = (temp_mask > 0.5).float()
 
-                temp_latent = torch.zeros(1, c, h, w).to(device, dtype=dtype)
-                temp_latent[:, :, pad_size_y:pad_size_y + latent_tmp.shape[-2], pad_size_x:pad_size_x + latent_tmp.shape[-1]] = latent_tmp
-                latent_tmp = temp_latent
-
-            latent_tensors.append((latent_in[:, :, i, :, :] * (1 - mask_tmp) + latent_tmp * mask_tmp).to(dtype=dtype))
-        
+            #     temp_latent = torch.zeros(1, c, h, w).to(device, dtype=dtype)
+            #     temp_latent[:, :, pad_size_y:pad_size_y + latent_tmp.shape[-2], pad_size_x:pad_size_x + latent_tmp.shape[-1]] = latent_tmp
+            #     latent_tmp = temp_latent
+            
+            mask_union = torch.logical_or(mask_tmp,mask_ref_tmp).float()
+            # from IPython import embed;embed()
+            latent_tensors.append((latent_in[:, :, i, :, :] * (1 - mask_union) + latent_in_replace[:, :, i, :, :] * mask_union).to(dtype=dtype))
+        # from IPython import embed;embed()
         latent_in = torch.cat(latent_tensors, dim=0).unsqueeze(0).permute(0, 2, 1, 3, 4)
+        
         # 从154行到上面的函数可能会导致原图失真
-        # from IPython import embed; embed()
+       
         # latent_in = latent[None].transpose(1,2)
         # from IPython import embed;embed()
         # pre-process zT
@@ -223,7 +261,7 @@ class DragonModels_3d():
         # # # 将mask保存在本地        
         # from IPython import embed; embed()
         latent_rec = self.editor.pipe.edit(
-            mode = 'move_batch',
+            mode = 'move_batch_replace',
             emb_im=emb_im,
             emb_im_uncond=emb_im_uncond, # [1, 64, 768]
             latent=latent_in, # torch.Size([1, 4, 80, 120])

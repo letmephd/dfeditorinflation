@@ -53,6 +53,100 @@ def split_ldm(ldm):
         y.append(p[1])
     return x,y
 
+def process_replace_batch(path_mask_batch, h, w, dx, dy, scale, input_scale, resize_scale, up_scale, up_ft_index, w_edit, w_content, w_contrast, w_inpaint, precision, path_mask_ref_batch=None):
+    dx, dy = dx * input_scale, dy * input_scale
+    mask_x0_batch = []
+    mask_x0_ref_batch = []
+
+    for path_mask in path_mask_batch:
+        if isinstance(path_mask, str):
+            mask_x0 = cv2.imread(path_mask)
+        else:
+            mask_x0 = path_mask
+        mask_x0 = cv2.resize(mask_x0, (w, h))
+        mask_x0 = img2tensor(mask_x0)[0]
+        mask_x0 = (mask_x0 > 0.5).float().to('cuda', dtype=precision)
+        mask_x0_batch.append(mask_x0)
+
+    if path_mask_ref_batch is not None:
+        for path_mask_ref in path_mask_ref_batch:
+            if isinstance(path_mask_ref, str):
+                mask_x0_ref = cv2.imread(path_mask_ref)
+            else:
+                mask_x0_ref = path_mask_ref
+            mask_x0_ref = cv2.resize(mask_x0_ref, (w, h))
+            mask_x0_ref = img2tensor(mask_x0_ref)[0]
+            mask_x0_ref = (mask_x0_ref > 0.5).float().to('cuda', dtype=precision)
+            mask_x0_ref_batch.append(mask_x0_ref)
+    else:
+        mask_x0_ref_batch = [None] * len(path_mask_batch)
+
+    masks_org_batch = []
+    masks_tar_batch = []
+    masks_cur_batch = []
+    masks_other_batch = []
+    masks_overlap_batch = []
+    masks_non_overlap_batch = []
+    # print("preprocess")
+    # from IPython import embed;embed()
+
+    for mask_x0, mask_x0_ref,dy_,dx_ in zip(mask_x0_batch, mask_x0_ref_batch,dy,dx):
+        mask_org = F.interpolate(mask_x0[None, None], (int(mask_x0.shape[-2] // scale), int(mask_x0.shape[-1] // scale))) > 0.5
+
+        # print("process")
+        # from IPython import embed;embed()
+        mask_union = ((mask_x0+mask_x0_ref) > 0.5).float()
+        mask_tar = F.interpolate(mask_union[None, None], (int(mask_x0.shape[-2] // scale), int(mask_x0.shape[-1] // scale))) > 0.5
+        # print("preprocess")
+        # from IPython import embed;embed()
+        # mask_tar = F.interpolate(mask_x0[None, None], (int(mask_x0.shape[-2] // scale * resize_scale), int(mask_x0.shape[-1] // scale * resize_scale))) > 0.5
+        # # print("process_move_batch")
+        # from IPython import embed;embed()
+        
+        mask_cur = torch.roll(mask_tar, (int(dy_ // scale * resize_scale), int(dx_ // scale * resize_scale)), (-2, -1))
+
+        pad_size_x = abs(mask_tar.shape[-1] - mask_org.shape[-1]) // 2
+        pad_size_y = abs(mask_tar.shape[-2] - mask_org.shape[-2]) // 2
+        if resize_scale > 1:
+            sum_before = torch.sum(mask_cur)
+            mask_cur = mask_cur[:, :, pad_size_y:pad_size_y + mask_org.shape[-2], pad_size_x:pad_size_x + mask_org.shape[-1]]
+            sum_after = torch.sum(mask_cur)
+            if sum_after != sum_before:
+                raise ValueError('Resize out of bounds, exiting.')
+        else:
+            temp = torch.zeros(1, 1, mask_org.shape[-2], mask_org.shape[-1]).to(mask_org.device)
+            temp[:, :, pad_size_y:pad_size_y + mask_cur.shape[-2], pad_size_x:pad_size_x + mask_cur.shape[-1]] = mask_cur
+            mask_cur = temp > 0.5
+
+        mask_other = (1 - ((mask_cur + mask_org) > 0.5).float()) > 0.5
+        mask_overlap = ((mask_cur.float() + mask_org.float()) > 1.5).float()
+        mask_non_overlap = (mask_org.float() - mask_overlap) > 0.5
+
+        masks_org_batch.append(mask_org)
+        masks_tar_batch.append(mask_tar)
+        masks_cur_batch.append(mask_cur)
+        masks_other_batch.append(mask_other)
+        masks_overlap_batch.append(mask_overlap)
+        masks_non_overlap_batch.append(mask_non_overlap)
+
+    return {
+        "mask_x0": mask_x0_batch,
+        "mask_x0_ref": mask_x0_ref_batch,
+        "mask_tar": masks_tar_batch,
+        "mask_cur": masks_cur_batch,
+        "mask_other": masks_other_batch,
+        "mask_overlap": masks_overlap_batch,
+        "mask_non_overlap": masks_non_overlap_batch,
+        "up_scale": up_scale,
+        "up_ft_index": up_ft_index,
+        "resize_scale": resize_scale,
+        "w_edit": w_edit,
+        "w_content": w_content,
+        "w_contrast": w_contrast,
+        "w_inpaint": w_inpaint,
+    }
+
+
 def process_move_batch(path_mask_batch, h, w, dx, dy, scale, input_scale, resize_scale, up_scale, up_ft_index, w_edit, w_content, w_contrast, w_inpaint, precision, path_mask_ref_batch=None):
     dx, dy = dx * input_scale, dy * input_scale
     mask_x0_batch = []
