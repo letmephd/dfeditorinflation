@@ -103,20 +103,20 @@ import json
 # #     os.mkdir(save_dir)
 # prompt = "a swan with a red beak swimming in a river near a wall and bushes"
 
-image_dir = "/home/yinzijin/experiments/gaojiayi/DragonDiffusion_inflation_ldm/data/walk_dog512/raw_video/"
+image_dir = "/home/yinzijin/experiments/gaojiayi/DragonDiffusion_inflation_ldm/data/jeep_turn/"
 image_list = os.listdir(image_dir)
 # image_list = list(translate_dict.keys())
 # save_dir = '/home/yinzijin/experiments/gaojiayi/DragonDiffusion_inflation_ldm/data_new/output_video_dog_replace_inflation_wtemporalguidance_12_nofm/'
-save_dir = '/home/yinzijin/experiments/gaojiayi/DragonDiffusion_inflation_ldm/data_new/output_video_dog_replce1temporal1/'
+save_dir = '/home/yinzijin/experiments/gaojiayi/DragonDiffusion_inflation_ldm/result/output_video_jeep2blacktruck_notemp/'
 
 if not os.path.exists(save_dir):
     os.mkdir(save_dir)
-mask_dir = "/home/yinzijin/experiments/gaojiayi/DragonDiffusion_inflation_ldm/data/walk_dog512/raw_video_mask/"
-ref_dir = "/home/yinzijin/experiments/gaojiayi/DragonDiffusion_inflation_ldm/output_copypaste_dog_change_enlarge1.4/"
-maskref_dir = "/home/yinzijin/experiments/gaojiayi/DragonDiffusion_inflation_ldm/output_copypaste_dog_change_mask_enlarge1.4/"
+mask_dir = "/home/yinzijin/experiments/gaojiayi/DragonDiffusion_inflation_ldm/data/jeep_turn_result_mask/"
+ref_dir = "/home/yinzijin/experiments/gaojiayi/DragonDiffusion_inflation_ldm/output_copypaste_jeep2blacktruckorigin/"
+maskref_dir = "/home/yinzijin/experiments/gaojiayi/DragonDiffusion_inflation_ldm/output_copypaste_dog_jeep2blacktruckorigin_mask/"
 # if not os.path.exists(save_dir):
 #     os.mkdir(save_dir)
-prompt = "a man is walking a dog on the road"
+prompt = " a black truck is moving on the road"
 
 
 def process_files_in_order(directory):
@@ -132,7 +132,9 @@ imgref_input_list = []
 mask_input_list = []
 mask_ref_list = []
 
-for image_name in tqdm.tqdm(image_list_sorted):
+# from IPython import embed;embed()
+
+for image_name in tqdm.tqdm(image_list_sorted[:16]):
     if 'png' not in image_name:
         continue
     image_name = image_name.split("/")[-1]

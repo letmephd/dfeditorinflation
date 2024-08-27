@@ -120,9 +120,11 @@ class Sampler_3d(StableDiffusionPipeline):
                     # editing guidance
                     noise_pred_org = noise_pred
                     if mode == 'move_batch_replace':
-                        guidance = self.guidance_move_perframe_replace(latent=latent, latent_noise_ref=latent_noise_ref[-(i+1)], t=t, text_embeddings=text_embeddings_org, energy_scale=energy_scale, **edit_kwargs)
-                        guidance = guidance+ self.guidance_temporal(latent=latent, latent_noise_ref=latent_noise_ref[-(i+1)], t=t, text_embeddings=text_embeddings_org, energy_scale=energy_scale, **edit_kwargs)
-                   
+                        # print("test_move_batch_replace")
+                        # from IPython import embed; embed()
+                        guidance = self.guidance_move_perframe_replace_changed0827(latent=latent, latent_noise_ref=latent_noise_ref[-(i+1)], t=t, text_embeddings=text_embeddings_org, energy_scale=energy_scale, **edit_kwargs)
+                        # guidance = guidance+ 0.1*self.guidance_move_perframe_residual(latent=latent, latent_noise_ref=latent_noise_ref[-(i+1)], t=t, text_embeddings=text_embeddings_org, energy_scale=energy_scale, **edit_kwargs)
+                        # guidance = guidance
                     elif mode == 'move_batch':
                         guidance = self.guidance_move_perframe(latent=latent, latent_noise_ref=latent_noise_ref[-(i+1)], t=t, text_embeddings=text_embeddings_org, energy_scale=energy_scale, **edit_kwargs)
                         guidance = guidance+ 10*self.guidance_temporal(latent=latent, latent_noise_ref=latent_noise_ref[-(i+1)], t=t, text_embeddings=text_embeddings_org, energy_scale=energy_scale, **edit_kwargs)
@@ -172,49 +174,7 @@ class Sampler_3d(StableDiffusionPipeline):
 
                 latent_prev = alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction
                 latent_prev_rd = alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction_rd
-                # print("test_guidance")
-                # from IPython import embed; embed()
-                # Regional SDE 这一部分是diffeditor里面的内容
-                # if (eta_rd > 0 or eta>0) and alg=='D+': # 这一步没有用到
-                #     variance_noise = torch.randn_like(latent_prev)
-                #     variance_rd = std_dev_t_rd * variance_noise
-                #     variance = std_dev_t * variance_noise
-                #     # from IPython import embed;embed()
-                    
-                #     if mode == 'move_batch_replace' :
-                        
-                #         mask_x0 = torch.stack(edit_kwargs["mask_x0"]) # 8, 512, 512
-                #         mask_cur = torch.stack(edit_kwargs["mask_cur"]).transpose(0,2).squeeze(0) # 1,1,8,128,128
-                #         mask = (F.interpolate(mask_x0[None], (mask_cur.shape[-2], mask_cur.shape[-1]))>0.5).float()
-                #         mask = ((mask_cur+mask)>0.5).float()
-                #         mask = (F.interpolate(mask, (latent_prev.shape[-2], latent_prev.shape[-1]))>0.5).to(dtype=latent.dtype)
-                    
-                #     elif mode == 'move_batch' :
-                        
-                #         mask_x0 = torch.stack(edit_kwargs["mask_x0"]) # 8, 512, 512
-                #         mask_cur = torch.stack(edit_kwargs["mask_cur"]).transpose(0,2).squeeze(0) # 1,1,8,128,128
-                #         mask = (F.interpolate(mask_x0[None], (mask_cur.shape[-2], mask_cur.shape[-1]))>0.5).float()
-                #         mask = ((mask_cur+mask)>0.5).float()
-                #         mask = (F.interpolate(mask, (latent_prev.shape[-2], latent_prev.shape[-1]))>0.5).to(dtype=latent.dtype)
-                    
-                #     if mode == 'move_':
-                #         mask = (F.interpolate(edit_kwargs["mask_x0"][None,None], (edit_kwargs["mask_cur"].shape[-2], edit_kwargs["mask_cur"].shape[-1]))>0.5).float()
-                #         mask = ((edit_kwargs["mask_cur"]+mask)>0.5).float()
-                #         mask = (F.interpolate(mask, (latent_prev.shape[-2], latent_prev.shape[-1]))>0.5).to(dtype=latent.dtype)
-                #     elif mode == 'move':
-                #         mask = (F.interpolate(edit_kwargs["mask_x0"][None,None], (edit_kwargs["mask_cur"].shape[-2], edit_kwargs["mask_cur"].shape[-1]))>0.5).float()
-                #         mask = ((edit_kwargs["mask_cur"]+mask)>0.5).float()
-                #         mask = (F.interpolate(mask, (latent_prev.shape[-2], latent_prev.shape[-1]))>0.5).to(dtype=latent.dtype)
-                #     elif mode == 'drag':
-                #         mask = F.interpolate(edit_kwargs["mask_x0"][None,None], (latent_prev[-1].shape[-2], latent_prev[-1].shape[-1]))
-                #         mask = (mask>0).to(dtype=latent.dtype)
-                #     elif mode == 'landmark':
-                #         mask = torch.ones_like(latent_prev)
-                #     elif mode == 'appearance' or mode == 'paste':
-                #         mask = F.interpolate(edit_kwargs["mask_base_cur"].float(), (latent_prev[-1].shape[-2], latent_prev[-1].shape[-1]))
-                #         mask = (mask>0).to(dtype=latent.dtype)
-                #     latent_prev = (latent_prev+variance)*(1-mask) + (latent_prev_rd+variance_rd)*mask
-                # print("move_batch")
+                
                 # from IPython import embed;embed()
                 if repeat>1:# 这些步骤都是在中间几个step才会用到的
                     with torch.no_grad():
@@ -231,6 +191,140 @@ class Sampler_3d(StableDiffusionPipeline):
             latent = latent_prev
             
         return latent
+    
+    def guidance_move_perframe_replace_changed0827(
+        self, 
+        mask_x0, 
+        mask_x0_ref, 
+        mask_tar, 
+        mask_cur, 
+        mask_other, 
+        mask_overlap, 
+        mask_non_overlap,
+        latent, 
+        latent_noise_ref, 
+        t, 
+        # estimator,
+        up_ft_index, 
+        text_embeddings, 
+        up_scale, 
+        resize_scale, 
+        energy_scale,
+        w_edit,
+        w_content,
+        w_contrast,
+        w_inpaint, 
+    ):
+        cos = nn.CosineSimilarity(dim=1)
+        w_inpaint=10
+        w_edit = 10
+        w_contrast=1 # 原来是0.2
+        loss_scale = [0.5, 0.5]
+        bs,c,f,h,w = latent.shape
+        with torch.no_grad():
+            up_ft_tar = self.estimator( # src.unet.estimator.MyUNet2DConditionModel
+                        sample=rearrange(latent_noise_ref.squeeze(2)[0::2], "b c f h w -> (b f) c h w") ,
+                        # sample=latent_noise_ref.squeeze(2)[::2].transpose(0,2).squeeze(2),
+                        timestep=t,
+                        up_ft_indices=up_ft_index,
+                        encoder_hidden_states=text_embeddings.repeat(bs*f,1,1))['up_ft'] #[[8, 1280, 32, 32,],[8, 640, 64, 64]]
+            up_ft_tar_org = copy.deepcopy(up_ft_tar)
+            for f_id in range(len(up_ft_tar_org)):
+                up_ft_tar_org[f_id] = F.interpolate(up_ft_tar_org[f_id], (up_ft_tar_org[-1].shape[-2]*up_scale, up_ft_tar_org[-1].shape[-1]*up_scale))
+            
+        with torch.no_grad():
+            up_ft_tar_replace = self.estimator(
+                        sample=rearrange(latent_noise_ref.squeeze(2)[1::2], "b c f h w -> (b f) c h w") ,
+                        # sample=latent_noise_ref.squeeze(2)[1::2],
+                        timestep=t,
+                        up_ft_indices=up_ft_index,
+                        encoder_hidden_states=text_embeddings.repeat(bs*f,1,1))['up_ft']
+            for f_id in range(len(up_ft_tar_replace)):
+                up_ft_tar_replace[f_id] = F.interpolate(up_ft_tar_replace[f_id], (up_ft_tar_replace[-1].shape[-2]*up_scale, up_ft_tar_replace[-1].shape[-1]*up_scale))
+        
+        
+        
+        
+        latent = latent.detach().requires_grad_(True) # [1, 4, 8, 64, 64]
+        for f_id in range(len(up_ft_tar)):
+            up_ft_tar[f_id] = F.interpolate(up_ft_tar[f_id], (int(up_ft_tar[-1].shape[-2]*up_scale), int(up_ft_tar[-1].shape[-1]*up_scale)))
+  
+            
+
+        up_ft_cur = self.estimator(
+                    sample=rearrange(latent,"b c f h w -> (b f) c h w"),
+                    timestep=t,
+                    up_ft_indices=up_ft_index,
+                    encoder_hidden_states=text_embeddings.repeat(bs*f,1,1))['up_ft']# [[8, 1280, 32, 32],[8, 640, 64, 64]
+        for f_id in range(len(up_ft_cur)):
+            up_ft_cur[f_id] = F.interpolate(up_ft_cur[f_id], (up_ft_cur[-1].shape[-2]*up_scale, up_ft_cur[-1].shape[-1]*up_scale))
+        
+        
+        # editing energy
+        loss_edit = 0
+        mask_cur = torch.stack(mask_cur).squeeze(1) # [8, 1, 128, 128]
+        mask_tar = torch.stack(mask_tar).squeeze(1) # [8, 1, 128, 128]
+        
+        # print("test")
+        # from IPython import embed;embed()
+        
+        for f_id in range(len(up_ft_tar)):
+            up_ft_cur_vec = up_ft_cur[f_id][mask_cur.repeat(1,up_ft_cur[f_id].shape[1],1,1)].view(up_ft_cur[f_id].shape[1], -1).permute(1,0)
+            up_ft_tar_vec = up_ft_tar_replace[f_id][mask_tar.repeat(1,up_ft_tar[f_id].shape[1],1,1)].view(up_ft_tar[f_id].shape[1], -1).permute(1,0)
+            sim = cos(up_ft_cur_vec, up_ft_tar_vec)
+            sim_global = cos(up_ft_cur_vec.mean(0, keepdim=True), up_ft_tar_vec.mean(0, keepdim=True))
+            loss_edit = loss_edit + (w_edit/(1+4*sim.mean()))*loss_scale[f_id] 
+        # print("test")
+        # from IPython import embed;embed()
+        # content energy
+        loss_con = 0
+        # if mask_x0_ref is not None and mask_x0_ref[0] is not None:
+        #     mask_x0_ref_cur = F.interpolate(mask_x0_ref[None,None], (mask_other.shape[-2], mask_other.shape[-1]))>0.5
+        # else:
+        #     mask_x0_ref_cur = mask_other
+        
+        mask_other = torch.stack(mask_other) # 8, 1, 1, 128, 128
+        # 这里没问题
+        for f_id in range(len(up_ft_tar_org)):
+            # sim_other = cos(up_ft_tar_org[f_id], up_ft_cur[f_id])[0][mask_other[0,0]]
+            sim_other = cos(up_ft_tar_org[f_id], up_ft_cur[f_id])[mask_other[:,0,0]]
+            loss_con = loss_con+w_content/(1+4*sim_other.mean())*loss_scale[f_id]
+        
+        
+        mask_non_overlap = rearrange(torch.stack(mask_non_overlap),"b c f h w -> (b f) c h w")
+        
+        # print("test_0827")
+        # from IPython import embed;embed()
+        
+        #opt部分 # 这里后面才看下 好像变的没意义了
+        for f_id in range(len(up_ft_tar)):
+            up_ft_cur_non_overlap = up_ft_cur[f_id][mask_non_overlap.repeat(1,up_ft_cur[f_id].shape[1],1,1)].view(up_ft_cur[f_id].shape[1], -1).permute(1,0)
+            up_ft_tar_non_overlap = up_ft_tar_org[f_id][mask_non_overlap.repeat(1,up_ft_tar_org[f_id].shape[1],1,1)].view(up_ft_tar_org[f_id].shape[1], -1).permute(1,0)
+            sim_non_overlap = (cos(up_ft_cur_non_overlap, up_ft_tar_non_overlap)+1.)/2.
+            loss_con = loss_con + w_contrast*sim_non_overlap.mean()*loss_scale[f_id]
+
+            up_ft_cur_non_overlap = up_ft_cur[f_id][mask_non_overlap.repeat(1,up_ft_cur[f_id].shape[1],1,1)].view(up_ft_cur[f_id].shape[1],-1).permute(1,0).mean(0, keepdim=True)
+            up_ft_tar_non_overlap = up_ft_tar_replace[f_id][mask_non_overlap.repeat(1,up_ft_tar_org[f_id].shape[1],1,1)].view(up_ft_tar_org[f_id].shape[1],-1).permute(1,0).mean(0, keepdim=True)
+            sim_inpaint = ((cos(up_ft_cur_non_overlap, up_ft_tar_non_overlap)+1.)/2.)
+            loss_con = loss_con + w_inpaint/(1+4*sim_inpaint.mean())
+
+        
+        cond_grad_edit = torch.autograd.grad(loss_edit*energy_scale, latent, retain_graph=True)[0]
+        cond_grad_con = torch.autograd.grad(loss_con*energy_scale, latent)[0]
+        
+        mask_x0 = torch.stack(mask_x0) # 8, 128, 128
+        mask_edit2 = (F.interpolate(mask_x0[None], (mask_cur.shape[-2], mask_cur.shape[-1]))>0.5).float() # torch.Size([1, 8, 128, 128])
+        mask_edit1 = (mask_cur>0.5).float().transpose(0,1) # # torch.Size([1, 8, 128, 128])
+        # from IPython import embed;embed()
+        mask_cur = mask_cur.transpose(0,1)
+        mask = ((mask_cur+mask_edit2)>0.5).float()
+        mask_edit1 = (F.interpolate(mask_edit1, (latent.shape[-2], latent.shape[-1]))>0).to(dtype=latent.dtype)
+        
+        guidance = cond_grad_edit.detach()*8e-2*mask_edit1 + cond_grad_con.detach()*8e-2*(1-mask_edit1)
+        self.estimator.zero_grad()
+
+        return guidance
+    
     
     def guidance_move_perframe_replace(
         self, 
@@ -324,7 +418,7 @@ class Sampler_3d(StableDiffusionPipeline):
         #     mask_x0_ref_cur = mask_other
         
         mask_other = torch.stack(mask_other) # 8, 1, 1, 128, 128
-        
+        # 这里没问题
         for f_id in range(len(up_ft_tar_org)):
             # sim_other = cos(up_ft_tar_org[f_id], up_ft_cur[f_id])[0][mask_other[0,0]]
             sim_other = cos(up_ft_tar_org[f_id], up_ft_cur[f_id])[mask_other[:,0,0]]
@@ -366,6 +460,186 @@ class Sampler_3d(StableDiffusionPipeline):
         return guidance
     
     
+    def guidance_move_perframe_residual(
+        self, 
+        mask_x0, 
+        mask_x0_ref, 
+        mask_tar, 
+        mask_cur, 
+        mask_other, 
+        mask_overlap, 
+        mask_non_overlap,
+        latent, 
+        latent_noise_ref, 
+        t, 
+        # estimator,
+        up_ft_index, 
+        text_embeddings, 
+        up_scale, 
+        resize_scale, 
+        energy_scale,
+        w_edit,
+        w_content,
+        w_contrast,
+        w_inpaint, 
+    ):
+        cos = nn.CosineSimilarity(dim=1)
+        w_inpaint=10
+        w_edit = 10
+        w_contrast=1 # 原来是0.2
+        loss_scale = [0.5, 0.5]
+        bs,c,f,h,w = latent.shape
+        with torch.no_grad():
+            up_ft_tar = self.estimator( # src.unet.estimator.MyUNet2DConditionModel
+                        sample=rearrange(latent_noise_ref.squeeze(2)[1::2], "b c f h w -> (b f) c h w") ,
+                        # sample=latent_noise_ref.squeeze(2)[::2].transpose(0,2).squeeze(2),
+                        timestep=t,
+                        up_ft_indices=up_ft_index,
+                        encoder_hidden_states=text_embeddings.repeat(bs*f,1,1))['up_ft'] #[[8, 1280, 32, 32,],[8, 640, 64, 64]]
+            up_ft_tar_org = copy.deepcopy(up_ft_tar)
+            for f_id in range(len(up_ft_tar_org)):
+                up_ft_tar_org[f_id] = F.interpolate(up_ft_tar_org[f_id], (up_ft_tar_org[-1].shape[-2]*up_scale, up_ft_tar_org[-1].shape[-1]*up_scale))
+            
+        
+        
+        latent = latent.detach().requires_grad_(True) # [1, 4, 8, 64, 64]
+        for f_id in range(len(up_ft_tar)):
+            up_ft_tar[f_id] = F.interpolate(up_ft_tar[f_id], (int(up_ft_tar[-1].shape[-2]*up_scale), int(up_ft_tar[-1].shape[-1]*up_scale)))
+  
+            
+
+        up_ft_cur = self.estimator(
+                    sample=rearrange(latent,"b c f h w -> (b f) c h w"),
+                    timestep=t,
+                    up_ft_indices=up_ft_index,
+                    encoder_hidden_states=text_embeddings.repeat(bs*f,1,1))['up_ft']# [[8, 1280, 32, 32],[8, 640, 64, 64]
+        for f_id in range(len(up_ft_cur)):
+            up_ft_cur[f_id] = F.interpolate(up_ft_cur[f_id], (up_ft_cur[-1].shape[-2]*up_scale, up_ft_cur[-1].shape[-1]*up_scale))
+        
+        mask_ref_origin = torch.stack(mask_x0_ref)
+        # mask_ref = F.interpolate(mask_ref.float().unsqueeze(1),(up_ft_cur[-1].shape[-2]*up_scale, up_ft_cur[-1].shape[-1]*up_scale))
+        
+        mask_cur = torch.stack(mask_cur).squeeze(1) # [8, 1, 128, 128]
+        mask_tar = torch.stack(mask_tar).squeeze(1) # [8, 1, 128, 128]
+        
+        loss_temp = 0
+        # print("test_temporal_residual")
+        # from IPython import embed;embed()
+        eps= 1e-8
+        features_diff_loss = 0
+        
+        for f_id in range(len(up_ft_tar)):
+            mask_ref = F.interpolate(mask_ref_origin.float().unsqueeze(1),(up_ft_cur[f_id].shape[-2],up_ft_cur[f_id].shape[-1]))>0.5
+            frame_maskmean_cur = []
+            frame_maskmean_tar = []
+            mask_ref_temp = mask_ref.repeat(1,up_ft_cur[f_id].shape[1],1,1)
+            for frame_id in range(f):
+                # print("test_temporal_residual_1")
+                # from IPython import embed;embed()  
+                frame_maskmean_cur.append(up_ft_cur[f_id][frame_id][mask_ref_temp[frame_id]].view(up_ft_cur[f_id].shape[1],-1).mean(-1))   
+                frame_maskmean_tar.append(up_ft_tar[f_id][frame_id][mask_ref_temp[frame_id]].view(up_ft_tar[f_id].shape[1],-1).mean(-1))
+
+                # frame_maskmean_cur.append(up_ft_cur[f_id][frame_id].view(up_ft_cur[f_id].shape[1],-1).mean(-1))
+                # frame_maskmean_tar.append(up_ft_tar[f_id][frame_id].view(up_ft_tar[f_id].shape[1],-1).mean(-1))
+
+                
+            # frame_maskmean_cur_before = torch.stack([frame_maskmean_cur[0]]+frame_maskmean_cur[:-1],dim=0)
+            frame_maskmean_cur = torch.stack(frame_maskmean_cur,dim=0)
+            
+            # frame_diff_cur =  frame_maskmean_cur-frame_maskmean_cur_before
+            
+            # frame_maskmean_tar_before = torch.stack([frame_maskmean_tar[0]]+frame_maskmean_tar[:-1],dim=0)
+            frame_maskmean_tar = torch.stack(frame_maskmean_tar,dim=0)
+            
+            # 至少跑得通
+            # frame_diff_tar0 = frame_maskmean_tar[0]-frame_maskmean_tar[1]
+            # frame_diff_cur0 = frame_maskmean_cur[0]-frame_maskmean_cur[1]
+            # sim0 = F.cosine_similarity(frame_diff_cur0,frame_diff_tar0.detach(),dim=0)
+            
+            # features_diff_loss+=sim0
+            
+            # for i in range(len(frame_maskmean_cur)-1):
+                
+            #     frame_diff_tar = frame_maskmean_tar[i+1]-frame_maskmean_tar[i]
+            #     frame_diff_cur = frame_maskmean_cur[i+1]-frame_maskmean_cur[i]
+            #     sim = F.cosine_similarity(frame_diff_cur,frame_diff_tar.detach(),dim=0)
+            #     features_diff_loss+=sim
+            
+            # 至少跑得通
+            # frame_diff_tar0 = frame_maskmean_tar[0]-frame_maskmean_tar[1]
+            # frame_diff_cur0 = frame_maskmean_cur[0]-frame_maskmean_cur[1]
+            # sim0 = F.cosine_similarity(frame_diff_cur0,frame_diff_tar0.detach(),dim=1)
+            
+            # features_diff_loss+=sim0
+            
+            # for i in range(len(frame_maskmean_cur)-1):
+                
+            #     frame_diff_tar = frame_maskmean_tar[i+1]-frame_maskmean_tar[i]
+            #     frame_diff_cur = frame_maskmean_cur[i+1]-frame_maskmean_cur[i]
+            #     sim = F.cosine_similarity(frame_diff_cur,frame_diff_tar.detach(),dim=1,eps=1e-3)
+            #     features_diff_loss+=sim
+            
+            
+            # for i in range(len(frame_maskmean_cur)-1):
+            #     print("test_temporal_residual_1")
+            #     from IPython import embed;embed()
+            #     frame_diff_tar = frame_maskmean_tar-frame_maskmean_tar[i]
+            #     frame_diff_cur = frame_maskmean_cur-frame_maskmean_cur[i]
+            #     sim = F.cosine_similarity(frame_diff_cur,frame_diff_tar.detach(),dim=1,eps=1e-3)
+            #     features_diff_loss+=sim
+            
+            for i in range(len(frame_maskmean_cur)):
+                
+                frame_diff_tar = frame_maskmean_tar-frame_maskmean_tar[i]
+                frame_diff_cur = frame_maskmean_cur-frame_maskmean_cur[i]
+                # from IPython import embed;embed()
+                sim =F.cosine_similarity(frame_diff_cur,frame_diff_tar.detach(), dim=1,eps=1e-3).mean()
+                features_diff_loss+=sim
+                # sim_filtered = torch.cat((sim[:i], sim[i+1:]))
+                # # sim[i]=
+                # sim = sim_filtered.mean()
+                
+                # F.cosine_similarity(frame_diff_cur,frame_diff_tar.detach(), dim=0)
+                
+            
+            #     features_diff_loss+=sim
+            # print("test_temporal_residual")
+            # from IPython import embed;embed() 
+            
+            # frame_diff_tar =  frame_maskmean_tar-frame_maskmean_tar_before
+            # sim = cos(frame_diff_cur,frame_diff_tar)[1:]
+            
+            
+            
+            # up_ft_cur_vec = up_ft_cur[f_id][mask_.repeat(1,up_ft_cur[f_id].shape[1],1,1)].view(up_ft_cur[f_id].shape[1], -1).permute(1,0)
+            
+            # up_ft_cur_vec = up_ft_cur[f_id][mask_ref.repeat(1,up_ft_cur[f_id].shape[1],1,1)].view(f,up_ft_cur[f_id].shape[1], -1).permute(1,0)
+            # up_ft_tar_vec = up_ft_tar[f_id][mask_tar.repeat(1,up_ft_tar[f_id].shape[1],1,1)].view(up_ft_tar[f_id].shape[1], -1).permute(1,0)
+            # sim = cos(up_ft_cur_vec, up_ft_tar_vec)
+            # sim_global = cos(up_ft_cur_vec.mean(0, keepdim=True), up_ft_tar_vec.mean(0, keepdim=True))
+            loss_temp = loss_temp + (w_edit/(1+4*(features_diff_loss/len(frame_maskmean_cur))))*loss_scale[f_id] 
+        
+            # with torch.autograd.detect_anomaly():
+            cond_grad_temp = torch.autograd.grad(loss_temp*energy_scale, latent, retain_graph=True)[0]
+        # print("test_temporal_residual_2")
+        # from IPython import embed;embed()
+        mask_ref =  F.interpolate(mask_ref_origin.float().unsqueeze(1),(cond_grad_temp.shape[-2],cond_grad_temp.shape[-1]))>0.5
+        # torch.Size([16, 1, 64, 64])
+        mask_ref = mask_ref.transpose(0,1).unsqueeze(0).repeat(1,4,1,1,1)
+        
+        guidance = cond_grad_temp.detach()*8e-2
+        # guidance = guidance
+        
+        # editing energy
+        # loss_edit = 0
+        # mask_cur = torch.stack(mask_cur).squeeze(1) # [8, 1, 128, 128]
+        # mask_tar = torch.stack(mask_tar).squeeze(1) # [8, 1, 128, 128]
+        
+        # guidance  =  None
+        
+        self.estimator.zero_grad()
+
+        return guidance
     
     
     def guidance_temporal(
@@ -391,6 +665,7 @@ class Sampler_3d(StableDiffusionPipeline):
         w_contrast,
         w_inpaint, 
     ):
+        
         cos = nn.CosineSimilarity(dim=0)
         latent = latent.detach().requires_grad_(True)
         prior_latent = latent.clone()
@@ -426,23 +701,67 @@ class Sampler_3d(StableDiffusionPipeline):
             # loss_temp = loss_temp+cos(latent1, latent2)+cos(latent0, latent2_)
             
         
-        # for i in range(f-1):
-        #     mask_edit_tmp1,mask_edit_tmp2 = main(mask_edit[0][i].unsqueeze(0).unsqueeze(0),mask_edit[0][i+1].unsqueeze(0).unsqueeze(0))
-        #     # print("test temporal")
-        #     # from IPython import embed;embed()
-        #     mask_edit_tmp0,mask_edit_tmp2_ = main(mask_edit[0][0].unsqueeze(0).unsqueeze(0),mask_edit[0][i+1].unsqueeze(0).unsqueeze(0))
-        #     mask_edit_tmp0 = (mask_edit_tmp0>0).repeat(1,4,1,1)
-        #     mask_edit_tmp1 = (mask_edit_tmp1>0).repeat(1,4,1,1)
-        #     mask_edit_tmp2 = (mask_edit_tmp2>0).repeat(1,4,1,1)
-        #     mask_edit_tmp2_ = (mask_edit_tmp2_>0).repeat(1,4,1,1)
+        loss_temp = w_temp/(1+4*loss_temp/(2*(f-1)))
+        cond_grad_temp = torch.autograd.grad(loss_temp*energy_scale, latent, retain_graph=True)[0]
+        guidance = cond_grad_temp.detach()*mask_edit*8e-2
+        
             
-        #     latent1 = latent[:,:,i][mask_edit_tmp1]
-        #     latent2 = latent[:,:,i+1][mask_edit_tmp2]
-        #     latent0 = latent[:,:,0][mask_edit_tmp0]
-        #     latent2_ = latent[:,:,0][mask_edit_tmp2_]
-        #     loss_temp = loss_temp+cos(latent1, latent2)+cos(latent0, latent2_)
-            # loss_temp = loss_temp+cos(latent1, latent2)
-        # from IPython import embed;embed()
+
+        return guidance
+    
+    def guidance_temporal_residual(
+        self, 
+        mask_x0, 
+        mask_x0_ref, 
+        mask_tar, 
+        mask_cur, 
+        mask_other, 
+        mask_overlap, 
+        mask_non_overlap,
+        latent, 
+        latent_noise_ref, 
+        t, 
+        # estimator,
+        up_ft_index, 
+        text_embeddings, 
+        up_scale, 
+        resize_scale, 
+        energy_scale,
+        w_edit,
+        w_content,
+        w_contrast,
+        w_inpaint, 
+    ):
+        
+        cos = nn.CosineSimilarity(dim=0)
+        latent = latent.detach().requires_grad_(True)
+        prior_latent = latent.clone()
+        for i in range(1, latent.size(2)):
+            prior_latent[:, :, i, :, :] = latent[:, :, i - 1, :, :]
+        
+        mask_non_overlap = rearrange(torch.stack(mask_non_overlap),"b c f h w -> (b f) c h w")
+        mask_other = rearrange(mask_other,"f c b h w -> (b c) f h w")
+        mask_edit = (1 - (mask_other > 0.5).float()) > 0.5
+        b, c, f, h, w =latent.shape
+        mask_edit = (F.interpolate(mask_edit.float(), (latent.shape[-2], latent.shape[-1]))>0.5)# torch.Size([1, 8, 128, 128])
+        mask_edit_new = mask_edit.clone()
+        
+        mask_ref = torch.stack(mask_x0_ref)
+        mask_ref = F.interpolate(mask_ref.float().unsqueeze(1),(latent.shape[-2], latent.shape[-1]))
+        
+        w_temp = 10 
+        loss_temp = 0
+        
+        
+        for i in range(f-1):
+            # latent1 = latent[:,:,i][mask_edit[0][i]]
+            latent_origin1 =  latent[:,:,i].view(1,4,-1)
+            mask_ref1 = mask_ref[i].view(1,-1)>0.5
+            latent1 = latent_origin1[:,:,mask_ref1[0]].mean(-1)
+            latent_origin2 =  latent[:,:,i+1].view(1,4,-1)
+            mask_ref2 = mask_ref[i+1].view(1,-1)>0.5
+            latent2 = latent_origin2[:,:,mask_ref2[0]].mean(-1)
+            
         
         loss_temp = w_temp/(1+4*loss_temp/(2*(f-1)))
         cond_grad_temp = torch.autograd.grad(loss_temp*energy_scale, latent, retain_graph=True)[0]

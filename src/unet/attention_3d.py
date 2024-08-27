@@ -170,6 +170,15 @@ class BasicTransformerBlock(nn.Module):
             cross_attention_dim=cross_attention_dim if only_cross_attention else None,
             upcast_attention=upcast_attention,
         )
+        # self.attn1 = MyCrossAttention(
+        #         query_dim=dim,
+        #         cross_attention_dim=cross_attention_dim,
+        #         heads=num_attention_heads,
+        #         dim_head=attention_head_dim,
+        #         dropout=dropout,
+        #         bias=attention_bias,
+        #         upcast_attention=upcast_attention,
+        #     )
         self.norm1 = AdaLayerNorm(dim, num_embeds_ada_norm) if self.use_ada_layer_norm else nn.LayerNorm(dim)
 
         # Cross-Attn
@@ -371,26 +380,30 @@ class SparseCausalAttention(CrossAttention):
 
         if self.added_kv_proj_dim is not None:
             raise NotImplementedError
-
+        
+        
+        
         encoder_hidden_states = encoder_hidden_states if encoder_hidden_states is not None else hidden_states #[2, 4096, 320])
         key = self.to_k(encoder_hidden_states) # [2, 4096, 320]
         value = self.to_v(encoder_hidden_states) # [2, 4096, 320]
 
         former_frame_index = torch.arange(video_length) - 1 # tensor([-1])
         former_frame_index[0] = 0
+        # print("checkselfattention")
+        # from IPython import embed;embed()
 
-        key = rearrange(key, "(b f) d c -> b f d c", f=video_length) # 2, 1, 4096, 320]
-        key = torch.cat([key[:, [0] * video_length], key[:, former_frame_index]], dim=2) # [2, 1, 8192, 320]
-        key = rearrange(key, "b f d c -> (b f) d c") # [2, 8192, 320]
-
+        # key 32, 4096, 320
+        key = rearrange(key, "(b f) d c -> b f d c", f=video_length) # 2, 1, 4096, 320] torch.Size([2, 16, 4096, 320])
+        key = torch.cat([key[:, [0] * video_length], key[:, former_frame_index]], dim=2) # [2, 1, 8192, 320] # torch.Size([2, 16, 8192, 320])
+        key = rearrange(key, "b f d c -> (b f) d c") # [2, 8192, 320] #torch.Size([32, 8192, 320])
         value = rearrange(value, "(b f) d c -> b f d c", f=video_length) # 2, 1, 4096, 320
         value = torch.cat([value[:, [0] * video_length], value[:, former_frame_index]], dim=2) # 2, 1, 8192, 320
-        value = rearrange(value, "b f d c -> (b f) d c") #  2, 8192, 320
+        value = rearrange(value, "b f d c -> (b f) d c") #  2, 8192, 320 
 
         # key = self.reshape_heads_to_batch_dim(key)
         # value = self.reshape_heads_to_batch_dim(value)
         
-        key = self.reshape_heads_to_batch_dim(key) # 16, 8192, 40
+        key = self.reshape_heads_to_batch_dim(key) # 16, 8192, 40 ,256, 8192, 40
         value = self.reshape_heads_to_batch_dim(value) # 16, 8192, 40
 
         if attention_mask is not None: #False
@@ -523,6 +536,9 @@ class MyCrossAttention(CrossAttention):
         encoder_hidden_states = encoder_hidden_states if encoder_hidden_states is not None else hidden_states
         key = self.to_k(encoder_hidden_states)
         value = self.to_v(encoder_hidden_states)
+        
+        # print("checkcrossattention")
+        # from IPython import embed;embed()
 
         key = self.reshape_heads_to_batch_dim(key)
         value = self.reshape_heads_to_batch_dim(value)
