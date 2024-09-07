@@ -438,18 +438,20 @@ class DragonUNet3DConditionModel(ModelMixin, ConfigMixin,UNet2DConditionLoadersM
         down_attention_maplist = [] # [128, 1024, 77],[128, 1024, 77],[128, 256, 77],[128, 256, 77]
         # down
         down_block_res_samples = (sample,)
-        
+        # print("unet wrong_")
         for downsample_block in self.down_blocks:
+            
+            # from IPython import embed; embed()
             if hasattr(downsample_block, "has_cross_attention") and downsample_block.has_cross_attention:
                 sample, res_samples,attention_map = downsample_block(
-                    hidden_states=sample,
-                    temb=emb,
-                    encoder_hidden_states=encoder_hidden_states,
+                    hidden_states=sample, # [2, 320, 16, 64, 64],[2, 320, 16, 32, 32] 2, 640, 16, 16, 16 [2, 1280, 16, 8, 8]
+                    temb=emb, #[2, 1280]
+                    encoder_hidden_states=encoder_hidden_states, # 2, 77, 768
                     attention_mask=attention_mask,
                 )
                 down_attention_maplist=down_attention_maplist+attention_map
             else:
-                sample, res_samples = downsample_block(hidden_states=sample, temb=emb)
+                sample, res_samples = downsample_block(hidden_states=sample, temb=emb) # [2, 1280, 16, 8, 8]
 
             down_block_res_samples += res_samples
         
@@ -487,56 +489,56 @@ class DragonUNet3DConditionModel(ModelMixin, ConfigMixin,UNet2DConditionLoadersM
         # up_attention_maplist [128, 256, 77] [128, 256, 77] [128, 256, 77] [128, 1024, 77] [128, 1024, 77] [128, 1024, 77]
         # print("unet3d condition")
         # from IPython import embed;embed()
-        if samplestep%10==0 and no_save==False:
-            filtered_attention_maplist = []
-            res = 16
+        # if samplestep%10==0 and no_save==False:
+        #     filtered_attention_maplist = []
+        #     res = 16
             
            
             
-            for tensor in down_attention_maplist:
-                if tensor is not None and tensor.size(1) == 256:
-                    fhb,c,t = tensor.shape
-                    filtered_attention_maplist.append(tensor[:int(fhb/2)].reshape(-1,8,res,res,t))
+        #     for tensor in down_attention_maplist:
+        #         if tensor is not None and tensor.size(1) == 256:
+        #             fhb,c,t = tensor.shape
+        #             filtered_attention_maplist.append(tensor[:int(fhb/2)].reshape(-1,8,res,res,t))
 
-            for tensor in up_attention_maplist:
-                if tensor is not None and tensor.size(1) == 256:
-                    fhb,c,t = tensor.shape
-                    filtered_attention_maplist.append(tensor[:int(fhb/2)].reshape(-1,8,res,res,t))
+        #     for tensor in up_attention_maplist:
+        #         if tensor is not None and tensor.size(1) == 256:
+        #             fhb,c,t = tensor.shape
+        #             filtered_attention_maplist.append(tensor[:int(fhb/2)].reshape(-1,8,res,res,t))
                     
-            out = torch.cat(filtered_attention_maplist, dim=-4) 
-            out = out.sum(-4) / out.shape[-4]
-            output_list = []
-            save_path = None
-            # print("check image num")
-            # from IPython import embed;embed()
-            for j in range(out.shape[0]):
-                images = []
-                # print("check prompt num")
-                # from IPython import embed;embed()
-                text_list = ['start']+prompt[0].split(' ')+['end']
-                save_path = './vis_noguidance_originprompt'
-                if not os.path.exists(save_path):
-                    os.mkdir(save_path)
-                if inversion:
-                    save_path = save_path+'/inversion'
-                else:
+            # out = torch.cat(filtered_attention_maplist, dim=-4) 
+            # out = out.sum(-4) / out.shape[-4]
+            # output_list = []
+            # save_path = None
+            # # print("check image num")
+            # # from IPython import embed;embed()
+            # for j in range(out.shape[0]):
+            #     images = []
+            #     # print("check prompt num")
+            #     # from IPython import embed;embed()
+            #     text_list = ['start']+prompt[0].split(' ')+['end']
+            #     save_path = './vis_noguidance_originprompt'
+            #     if not os.path.exists(save_path):
+            #         os.mkdir(save_path)
+            #     if inversion:
+            #         save_path = save_path+'/inversion'
+            #     else:
                     
-                    save_path = save_path+'/sampling'
-                for i in range(len(text_list)):
-                    image = out[j, :, :, i]
-                    image = 255 * image / image.max()
-                    image = image.unsqueeze(-1).expand(*image.shape, 3)
-                    image = image.cpu().numpy().astype(np.uint8)
-                    image = np.array(Image.fromarray(image).resize((256, 256)))
-                    image = text_under_image(image, text_list[i])
-                    images.append(image)
-                # print("unet3d condition_afterxs")
-                # from IPython import embed;embed()
-                if not os.path.exists(save_path):
-                    os.mkdir(save_path)
-                view_images(np.stack(images, axis=0), save_path=save_path+'/'+str(samplestep),page=j)
-                atten_j = np.concatenate(images, axis=1)
-                output_list.append(atten_j) 
+            #         save_path = save_path+'/sampling'
+            #     for i in range(len(text_list)):
+            #         image = out[j, :, :, i]
+            #         image = 255 * image / image.max()
+            #         image = image.unsqueeze(-1).expand(*image.shape, 3)
+            #         image = image.cpu().numpy().astype(np.uint8)
+            #         image = np.array(Image.fromarray(image).resize((256, 256)))
+            #         image = text_under_image(image, text_list[i])
+            #         images.append(image)
+            #     # print("unet3d condition_afterxs")
+            #     # from IPython import embed;embed()
+            #     if not os.path.exists(save_path):
+            #         os.mkdir(save_path)
+            #     view_images(np.stack(images, axis=0), save_path=save_path+'/'+str(samplestep),page=j)
+            #     atten_j = np.concatenate(images, axis=1)
+            #     output_list.append(atten_j) 
             # if save_path is not None:
             #     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
             #     video_save_path = f'{save_path}/{now}_{samplestep}.gif'

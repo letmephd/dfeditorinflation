@@ -87,8 +87,7 @@ def process_replace_batch(path_mask_batch, h, w, dx, dy, scale, input_scale, res
     masks_other_batch = []
     masks_overlap_batch = []
     masks_non_overlap_batch = []
-    # print("preprocess")
-    # from IPython import embed;embed()
+    
 
     for mask_x0, mask_x0_ref,dy_,dx_ in zip(mask_x0_batch, mask_x0_ref_batch,dy,dx):
         mask_org = F.interpolate(mask_x0[None, None], (int(mask_x0.shape[-2] // scale), int(mask_x0.shape[-1] // scale))) > 0.5

@@ -62,9 +62,9 @@ class DragonModels_3d():
         energy_scale = energy_scale*1e3
         img = original_image # (4640, 6960, 3)
         img_batch, input_scale = resize_batch_numpy_images(img, max_resolution*max_resolution) # 按照最大像素数768*768 对大小进行放缩,后一个值是变放缩的倍数
-        h, w = img_batch.shape[2], img_batch.shape[1] 
+        # h, w = img_batch.shape[2], img_batch.shape[1] 
         
-        n, w, h, c = img_batch.shape
+        n, h, w, c = img_batch.shape
         
         processed_images_prompt = []
         processed_images_tensor = []
@@ -121,15 +121,23 @@ class DragonModels_3d():
         # from IPython import embed;embed()
         latent = self.editor.image2latent(processed_images_tensor)
         latent_replace = self.editor.image2latent(processed_replacements_tensor)
-        # latent = self.editor.image2latent(img_tensor)
+        # latent = self.editor.image2latent(img_tensor) ([9, 4, 48, 88])
         # latent_replace = self.editor.image2latent(img_replace_tensor)
-        ddim_latents = self.editor.ddim_inv_3d(latent=torch.cat([latent.transpose(0,1).unsqueeze(0),latent_replace.transpose(0,1).unsqueeze(0)]), prompt=[prompt,prompt])
+        # from IPython import embed;embed()
+        prompt1 = "a person and a dog"
+        prompt2 = "a person and a white tiger"
+        ddim_latents = self.editor.ddim_inv_3d(latent=torch.cat([latent.transpose(0,1).unsqueeze(0),latent_replace.transpose(0,1).unsqueeze(0)]), prompt=[prompt1,prompt2])
+        # 51 [2, 4, 9, 48, 88]
+        # torch.save(ddim_latents,"ddim_latents.pth")
+        
         
         # ddim_latents = self.editor.ddim_inv_3d(latent=torch.cat([latent,latent_replace]), prompt=[prompt,prompt])
             
         # ddim_latents  = torch.load("ddim_latents.pth")
-        latent_in = ddim_latents[-1][:1].squeeze(2)
-        latent_in_replace = ddim_latents[-1][1:].squeeze(2)
+        # latent_in = ddim_latents[-1][:1].squeeze(2)
+        # latent_in_replace = ddim_latents[-1][1:].squeeze(2)
+        latent_in = ddim_latents[-1][:1]
+        latent_in_replace = ddim_latents[-1][1:]
         # torch.save(ddim_latents,"ddim_latents.pth")
         
         scale = 8*SIZES[max(self.up_ft_index)]/self.up_scale #? 这块的话应该只适应于不移动的情况
@@ -146,6 +154,10 @@ class DragonModels_3d():
                 x_cur.append(point[0])
         dx = x_cur[0]-x[0]
         dy = y_cur[0]-y[0]
+        
+        # print("test_model1")
+        # # # # 将mask保存在本地        
+        # from IPython import embed; embed()
         
         edit_kwargs = process_replace_batch( # 这块后面可以再检查下
             path_mask_batch=mask, #就是物体单独的mask
@@ -174,6 +186,7 @@ class DragonModels_3d():
         device = latent_in.device
         dtype = latent_in.dtype
         latent_tensors = []
+        # from IPython import embed;embed()
         batch_size, c, n, h, w = latent_in.shape
         
         resize_scale=1
@@ -257,9 +270,7 @@ class DragonModels_3d():
         
         #self.pipe src.models.dragondiff.DragonPipeline
         #
-        # print("test_model1")
-        # # # 将mask保存在本地        
-        # from IPython import embed; embed()
+        
         latent_rec = self.editor.pipe.edit(
             mode = 'move_batch_replace',
             emb_im=emb_im,

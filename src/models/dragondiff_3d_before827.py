@@ -5,7 +5,6 @@ import numpy as np
 from src.unet.unet_2d_condition import DragonUNet2DConditionModel
 from src.unet.unet_3d_condition import DragonUNet3DConditionModel
 from src.unet.estimator import MyUNet2DConditionModel
-from src.unet.estimator_3d import MyUNet3DConditionModel
 from diffusers import DDIMScheduler
 import gc
 from PIL import Image
@@ -16,9 +15,7 @@ from src.utils.inversion import DDIMInversion
 from src.unet.attention_processor import IPAttnProcessor, AttnProcessor, Resampler
 from transformers import CLIPVisionModelWithProjection, CLIPImageProcessor
 from src.models.Sampler import Sampler
-# from src.models.Sampler_3d import Sampler_3d
-from src.models.Sampler_3d_real import Sampler_3d
-
+from src.models.Sampler_3d import Sampler_3d
 from einops import rearrange
 
 
@@ -32,10 +29,9 @@ class DragonPipeline_3d:
         onestep_pipe = Sampler_3d.from_pretrained(sd_id, unet=unet, safety_checker=None, feature_extractor=None, tokenizer=tokenizer, text_encoder=text_encoder, dtype=precision)
         onestep_pipe.vae = AutoencoderKL.from_pretrained(sd_id, subfolder="vae", torch_dtype=precision)
         onestep_pipe.scheduler = DDIMScheduler.from_pretrained(sd_id, subfolder="scheduler")
-        onestep_pipe.estimator = MyUNet3DConditionModel.from_pretrained_2d(sd_id, subfolder="unet").to('cuda', dtype=precision)
-        # onestep_pipe.estimator = MyUNet3DConditionModel.from_pretrained_2d(sd_id, subfolder="unet",vae=None, text_encoder=None, tokenizer=None,
-        #                         scheduler=DDIMScheduler.from_pretrained(sd_id, subfolder="scheduler"),
-        #                         safety_checker=None, feature_extractor=None,).to('cuda', dtype=precision)
+        onestep_pipe.estimator = MyUNet2DConditionModel.from_pretrained(sd_id, subfolder="unet",vae=None, text_encoder=None, tokenizer=None,
+                                scheduler=DDIMScheduler.from_pretrained(sd_id, subfolder="scheduler"),
+                                safety_checker=None, feature_extractor=None,).to('cuda', dtype=precision)
         onestep_pipe.estimator.enable_xformers_memory_efficient_attention()
         gc.collect()
         onestep_pipe = onestep_pipe.to("cuda")

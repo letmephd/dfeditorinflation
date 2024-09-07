@@ -2,8 +2,9 @@ from diffusers.models.unet_2d_condition import UNet2DConditionModel
 from typing import Any, Dict, Optional, Union
 import torch
 import numpy as np
+from ..models.dragondiff_3d import DragonUNet3DConditionModel
 
-class MyUNet2DConditionModel(UNet2DConditionModel):
+class MyUNet3DConditionModel(DragonUNet3DConditionModel):
     def forward(
         self,
         sample: torch.FloatTensor,
@@ -90,17 +91,15 @@ class MyUNet2DConditionModel(UNet2DConditionModel):
 
         # 3. down
         down_block_res_samples = (sample,)
-        # print("test here right")
-        # from IPython import embed;embed()
         for downsample_block in self.down_blocks:
+            # print("estimator wrong")
             # from IPython import embed; embed()
             if hasattr(downsample_block, "has_cross_attention") and downsample_block.has_cross_attention:
-                sample, res_samples = downsample_block(
-                    hidden_states=sample,
-                    temb=emb,
-                    encoder_hidden_states=encoder_hidden_states,
+                sample, res_samples,attention_map = downsample_block(
+                    hidden_states=sample, # [1, 320, 16, 64, 64]
+                    temb=emb, #[1, 1280]
+                    encoder_hidden_states=encoder_hidden_states, # [1, 77, 768]
                     attention_mask=attention_mask,
-                    cross_attention_kwargs=cross_attention_kwargs,
                 )
             else:
                 sample, res_samples = downsample_block(hidden_states=sample, temb=emb)
@@ -114,7 +113,6 @@ class MyUNet2DConditionModel(UNet2DConditionModel):
                 emb,
                 encoder_hidden_states=encoder_hidden_states,
                 attention_mask=attention_mask,
-                cross_attention_kwargs=cross_attention_kwargs,
             )
 
         # 5. up
@@ -135,12 +133,11 @@ class MyUNet2DConditionModel(UNet2DConditionModel):
                 upsample_size = down_block_res_samples[-1].shape[2:]
 
             if hasattr(upsample_block, "has_cross_attention") and upsample_block.has_cross_attention:
-                sample = upsample_block(
+                sample,attention_map = upsample_block(
                     hidden_states=sample,
                     temb=emb,
                     res_hidden_states_tuple=res_samples,
                     encoder_hidden_states=encoder_hidden_states,
-                    cross_attention_kwargs=cross_attention_kwargs,
                     upsample_size=upsample_size,
                     attention_mask=attention_mask,
                 )
